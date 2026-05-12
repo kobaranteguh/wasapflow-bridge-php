@@ -1,0 +1,19 @@
+{
+    "name": "wasapflow/bridge",
+    "description": "Official PHP SDK for WasapFlow Bridge — WhatsApp Cloud API via WasapFlow Tech Provider",
+    "type": "library",
+    "license": "MIT",
+    "require": {
+        "php": ">=7.4",
+        "ext-json": "*",
+        "guzzlehttp/guzzle": "^7.0"
+    },
+    "autoload": {
+        "psr-4": {
+            "WasapFlow\\Bridge\\": "src/"
+        }
+    },
+    "authors": [
+        { "name": "WasapFlow", "homepage": "https://wasapflow.com" }
+    ]
+}
