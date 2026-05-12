@@ -5,6 +5,8 @@ namespace WasapFlow\Bridge;
 use GuzzleHttp\Client;
 use GuzzleHttp\Exception\RequestException;
 
+// ─── Exception ───────────────────────────────────────────────────────────────
+
 class BridgeException extends \RuntimeException
 {
     public string $code;
@@ -19,6 +21,8 @@ class BridgeException extends \RuntimeException
         $this->bridgeError = $bridgeError;
     }
 }
+
+// ─── HTTP client ─────────────────────────────────────────────────────────────
 
 class Http
 {
@@ -49,7 +53,7 @@ class Http
     public function get(string $path, array $headers = []): array
     {
         try {
-            $res  = $this->client->get($this->base . $path, ['headers' => $headers]);
+            $res = $this->client->get($this->base . $path, ['headers' => $headers]);
             return $this->handle(json_decode($res->getBody(), true), $res->getStatusCode());
         } catch (RequestException $e) {
             $body = $e->hasResponse() ? json_decode($e->getResponse()->getBody(), true) : [];
@@ -61,7 +65,19 @@ class Http
     public function post(string $path, array $body = [], array $headers = []): array
     {
         try {
-            $res  = $this->client->post($this->base . $path, ['json' => $body, 'headers' => $headers]);
+            $res = $this->client->post($this->base . $path, ['json' => $body, 'headers' => $headers]);
+            return $this->handle(json_decode($res->getBody(), true), $res->getStatusCode());
+        } catch (RequestException $e) {
+            $resp = $e->hasResponse() ? json_decode($e->getResponse()->getBody(), true) : [];
+            $err  = $resp['error'] ?? [];
+            throw new BridgeException($err['message'] ?? $e->getMessage(), $err['code'] ?? 'NETWORK_ERROR', $e->getCode(), $err);
+        }
+    }
+
+    public function put(string $path, array $body = [], array $headers = []): array
+    {
+        try {
+            $res = $this->client->put($this->base . $path, ['json' => $body, 'headers' => $headers]);
             return $this->handle(json_decode($res->getBody(), true), $res->getStatusCode());
         } catch (RequestException $e) {
             $resp = $e->hasResponse() ? json_decode($e->getResponse()->getBody(), true) : [];
@@ -73,7 +89,7 @@ class Http
     public function delete(string $path, array $headers = []): array
     {
         try {
-            $res  = $this->client->delete($this->base . $path, ['headers' => $headers]);
+            $res = $this->client->delete($this->base . $path, ['headers' => $headers]);
             return $this->handle(json_decode($res->getBody(), true), $res->getStatusCode());
         } catch (RequestException $e) {
             $resp = $e->hasResponse() ? json_decode($e->getResponse()->getBody(), true) : [];
@@ -82,6 +98,8 @@ class Http
         }
     }
 }
+
+// ─── Messages ────────────────────────────────────────────────────────────────
 
 class Messages
 {
@@ -99,7 +117,9 @@ class Messages
         $tmpl = [
             'name'       => $name,
             'language'   => ['code' => $language],
-            'components' => $components ?: ($params ? [['type' => 'body', 'parameters' => array_map(fn($p) => ['type' => 'text', 'text' => (string)$p], $params)]] : []),
+            'components' => $components ?: ($params
+                ? [['type' => 'body', 'parameters' => array_map(fn($p) => ['type' => 'text', 'text' => (string)$p], $params)]]
+                : []),
         ];
         return $this->http->post('/messages/template', ['to' => $to, 'template' => $tmpl], $this->h());
     }
@@ -155,46 +175,124 @@ class Messages
         if ($footer) $interactive['footer'] = ['text' => $footer];
         return $this->http->post('/messages/interactive', ['to' => $to, 'interactive' => $interactive], $this->h());
     }
-}
 
-class ClientScope
-{
-    public Messages $messages;
-    public function __construct(Http $http, string $wabaId)
+    /** Send a location pin. */
+    public function location(string $to, float $latitude, float $longitude, ?string $name = null, ?string $address = null): array
     {
-        $this->messages = new Messages($http, $wabaId);
-    }
-}
-
-class WasapFlowBridge
-{
-    private Http    $http;
-    public  Clients  $clients;
-    public  Contacts $contacts;
-
-    /**
-     * @param string $partnerKey    Partner API key (wf_live_xxx)
-     * @param string $webhookSecret Webhook secret (whsec_xxx)
-     * @param string $baseUrl       WasapFlow server URL
-     * @param float  $timeout       HTTP timeout in seconds
-     */
-    public function __construct(
-        string $partnerKey,
-        public readonly string $webhookSecret = '',
-        string $baseUrl = 'https://api.wasapflow.com',
-        float $timeout = 15.0
-    ) {
-        if (!$partnerKey) throw new \InvalidArgumentException('partnerKey is required');
-        $this->http     = new Http($partnerKey, $baseUrl, $timeout);
-        $this->clients  = new Clients($this->http);
-        $this->contacts = new Contacts($this->http);
+        $payload = ['to' => $to, 'latitude' => $latitude, 'longitude' => $longitude];
+        if ($name)    $payload['name']    = $name;
+        if ($address) $payload['address'] = $address;
+        return $this->http->post('/messages/location', $payload, $this->h());
     }
 
-    public function client(string $wabaId): ClientScope
+    /** Send an emoji reaction to a received message. */
+    public function reaction(string $to, string $messageId, string $emoji): array
     {
-        return new ClientScope($this->http, $wabaId);
+        return $this->http->post('/messages/reaction', ['to' => $to, 'message_id' => $messageId, 'emoji' => $emoji], $this->h());
+    }
+
+    /** Mark a received message as read. */
+    public function markRead(string $messageId): array
+    {
+        return $this->http->post('/messages/read', ['message_id' => $messageId], $this->h());
     }
 }
+
+// ─── Templates ───────────────────────────────────────────────────────────────
+
+class Templates
+{
+    public function __construct(private Http $http) {}
+
+    public function list(string $wabaId): array
+    {
+        return $this->http->get('/templates', ['x-waba-id' => $wabaId]);
+    }
+
+    public function create(string $wabaId, string $name, string $language, string $category, array $components): array
+    {
+        return $this->http->post('/templates', [
+            'name' => $name, 'language' => $language, 'category' => $category, 'components' => $components,
+        ], ['x-waba-id' => $wabaId]);
+    }
+
+    public function delete(string $wabaId, string $templateName): array
+    {
+        return $this->http->delete('/templates/' . rawurlencode($templateName), ['x-waba-id' => $wabaId]);
+    }
+}
+
+// ─── Broadcasts ──────────────────────────────────────────────────────────────
+
+class Broadcasts
+{
+    public function __construct(private Http $http) {}
+
+    public function create(
+        string $wabaId,
+        string $templateName,
+        array  $contacts,
+        string $templateLanguage   = 'en_US',
+        array  $templateComponents = [],
+        ?string $name              = null,
+        ?string $scheduledAt       = null
+    ): array {
+        return $this->http->post('/broadcasts', [
+            'template_name'       => $templateName,
+            'template_language'   => $templateLanguage,
+            'template_components' => $templateComponents,
+            'contacts'            => $contacts,
+            'name'                => $name,
+            'scheduled_at'        => $scheduledAt,
+        ], ['x-waba-id' => $wabaId]);
+    }
+
+    public function list(int $limit = 20, int $offset = 0): array
+    {
+        return $this->http->get("/broadcasts?limit={$limit}&offset={$offset}");
+    }
+
+    public function get(int|string $broadcastId): array
+    {
+        return $this->http->get("/broadcasts/{$broadcastId}");
+    }
+
+    public function cancel(int|string $broadcastId): array
+    {
+        return $this->http->post("/broadcasts/{$broadcastId}/cancel");
+    }
+}
+
+// ─── Analytics ───────────────────────────────────────────────────────────────
+
+class Analytics
+{
+    public function __construct(private Http $http) {}
+
+    public function get(string $wabaId, int $days = 7): array
+    {
+        return $this->http->get("/analytics?days={$days}", ['x-waba-id' => $wabaId]);
+    }
+}
+
+// ─── Profile ─────────────────────────────────────────────────────────────────
+
+class Profile
+{
+    public function __construct(private Http $http) {}
+
+    public function get(string $wabaId): array
+    {
+        return $this->http->get('/profile', ['x-waba-id' => $wabaId]);
+    }
+
+    public function update(string $wabaId, array $fields): array
+    {
+        return $this->http->put('/profile', $fields, ['x-waba-id' => $wabaId]);
+    }
+}
+
+// ─── Clients & Contacts ──────────────────────────────────────────────────────
 
 class Clients
 {
@@ -211,9 +309,7 @@ class Clients
     }
 
     public function list(): array  { return $this->http->get('/clients'); }
-
-    public function remove(string $wabaId): array { return $this->http->delete("/clients/{$wabaId}"); }
-
+    public function remove(string $wabaId): array  { return $this->http->delete("/clients/{$wabaId}"); }
     public function refresh(string $wabaId): array { return $this->http->post("/clients/{$wabaId}/refresh"); }
 }
 
@@ -233,5 +329,113 @@ class Contacts
             'mime_type' => $mimeType,
             'type'      => $type ?? explode('/', $mimeType)[0],
         ], ['x-waba-id' => $wabaId]);
+    }
+
+    /** Get a download URL for inbound media received via webhook. */
+    public function downloadMedia(string $mediaId, string $wabaId): array
+    {
+        return $this->http->get('/media/' . rawurlencode($mediaId), ['x-waba-id' => $wabaId]);
+    }
+}
+
+// ─── Per-WABA scoped wrappers ─────────────────────────────────────────────────
+
+class ScopedTemplates
+{
+    public function __construct(private Templates $t, private string $wabaId) {}
+    public function list(): array { return $this->t->list($this->wabaId); }
+    public function create(string $name, string $language, string $category, array $components): array
+        { return $this->t->create($this->wabaId, $name, $language, $category, $components); }
+    public function delete(string $templateName): array { return $this->t->delete($this->wabaId, $templateName); }
+}
+
+class ScopedBroadcasts
+{
+    public function __construct(private Broadcasts $b, private string $wabaId) {}
+    public function create(string $templateName, array $contacts, string $language = 'en_US', array $components = [], ?string $name = null, ?string $scheduledAt = null): array
+        { return $this->b->create($this->wabaId, $templateName, $contacts, $language, $components, $name, $scheduledAt); }
+    public function list(int $limit = 20, int $offset = 0): array { return $this->b->list($limit, $offset); }
+    public function get(int|string $id): array    { return $this->b->get($id); }
+    public function cancel(int|string $id): array { return $this->b->cancel($id); }
+}
+
+class ScopedAnalytics
+{
+    public function __construct(private Analytics $a, private string $wabaId) {}
+    public function get(int $days = 7): array { return $this->a->get($this->wabaId, $days); }
+}
+
+class ScopedProfile
+{
+    public function __construct(private Profile $p, private string $wabaId) {}
+    public function get(): array               { return $this->p->get($this->wabaId); }
+    public function update(array $fields): array { return $this->p->update($this->wabaId, $fields); }
+}
+
+// ─── ClientScope ─────────────────────────────────────────────────────────────
+
+class ClientScope
+{
+    public Messages        $messages;
+    public ScopedTemplates  $templates;
+    public ScopedBroadcasts $broadcasts;
+    public ScopedAnalytics  $analytics;
+    public ScopedProfile    $profile;
+
+    public function __construct(Http $http, string $wabaId)
+    {
+        $this->messages   = new Messages($http, $wabaId);
+        $this->templates  = new ScopedTemplates(new Templates($http), $wabaId);
+        $this->broadcasts = new ScopedBroadcasts(new Broadcasts($http), $wabaId);
+        $this->analytics  = new ScopedAnalytics(new Analytics($http), $wabaId);
+        $this->profile    = new ScopedProfile(new Profile($http), $wabaId);
+    }
+}
+
+// ─── Main SDK class ───────────────────────────────────────────────────────────
+
+/**
+ * WasapFlow Bridge PHP SDK (v1.1.0)
+ *
+ * Usage:
+ *   $bridge = new WasapFlowBridge('wf_live_xxx', 'whsec_xxx');
+ *
+ *   // Per-WABA client
+ *   $waba = $bridge->client('1234567890');
+ *   $waba->messages->send('60123456789', 'Hello!');
+ *   $waba->templates->list();
+ *   $waba->broadcasts->create('my_template', ['60123456789']);
+ *   $waba->analytics->get(30);
+ *   $waba->profile->update(['about' => 'We reply fast!']);
+ */
+class WasapFlowBridge
+{
+    private Http $http;
+    public Clients    $clients;
+    public Contacts   $contacts;
+    public Templates  $templates;
+    public Broadcasts $broadcasts;
+    public Analytics  $analytics;
+    public Profile    $profile;
+
+    public function __construct(
+        string $partnerKey,
+        public readonly string $webhookSecret = '',
+        string $baseUrl  = 'https://api.wasapflow.com',
+        float  $timeout  = 15.0
+    ) {
+        if (!$partnerKey) throw new \InvalidArgumentException('partnerKey is required');
+        $this->http       = new Http($partnerKey, $baseUrl, $timeout);
+        $this->clients    = new Clients($this->http);
+        $this->contacts   = new Contacts($this->http);
+        $this->templates  = new Templates($this->http);
+        $this->broadcasts = new Broadcasts($this->http);
+        $this->analytics  = new Analytics($this->http);
+        $this->profile    = new Profile($this->http);
+    }
+
+    public function client(string $wabaId): ClientScope
+    {
+        return new ClientScope($this->http, $wabaId);
     }
 }
