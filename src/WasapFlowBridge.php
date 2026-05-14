@@ -308,6 +308,16 @@ class Clients
         ]);
     }
 
+    /** Register a WABA using an Embedded Signup code. Token exchange happens server-side. */
+    public function registerFromCode(string $code, string $displayName = ''): array {
+        return $this->http->post('/clients/register-from-code', [
+            'code' => $code, 'display_name' => $displayName,
+        ]);
+    }
+
+    /** Get Meta App ID and Config ID for your Embedded Signup frontend. */
+    public function getEmbeddedSignupConfig(): array { return $this->http->get('/embedded-signup/config'); }
+
     public function list(): array  { return $this->http->get('/clients'); }
     public function remove(string $wabaId): array  { return $this->http->delete("/clients/{$wabaId}"); }
 
