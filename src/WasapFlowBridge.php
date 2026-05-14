@@ -310,7 +310,17 @@ class Clients
 
     public function list(): array  { return $this->http->get('/clients'); }
     public function remove(string $wabaId): array  { return $this->http->delete("/clients/{$wabaId}"); }
-    public function refresh(string $wabaId): array { return $this->http->post("/clients/{$wabaId}/refresh"); }
+
+    /** Refresh quality rating + tier. Optionally update access token. */
+    public function refresh(string $wabaId, string $accessToken = null): array {
+        $body = $accessToken ? ['access_token' => $accessToken] : [];
+        return $this->http->post("/clients/{$wabaId}/refresh", $body);
+    }
+
+    /** Reconnect Meta webhook for a WABA. Call if webhook events stop arriving. */
+    public function resubscribeWebhook(string $wabaId): array {
+        return $this->http->post("/clients/{$wabaId}/resubscribe-webhook");
+    }
 }
 
 class Contacts
