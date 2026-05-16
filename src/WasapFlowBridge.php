@@ -318,6 +318,17 @@ class Clients
     /** Get Meta App ID and Config ID for your Embedded Signup frontend. */
     public function getEmbeddedSignupConfig(): array { return $this->http->get('/embedded-signup/config'); }
 
+    /**
+     * Get the WasapFlow hosted Embedded Signup popup URL.
+     * Open this URL as a popup from your frontend.
+     * FB.init runs on officialapi.wasapflow.com — Meta only sees WasapFlow.
+     * Listen for postMessage with type='WASAPFLOW_CONNECT_SUCCESS'.
+     */
+    public function getConnectUrl(string $displayName = ''): string {
+        $base = rtrim($this->http->getBaseUrl(), '/');
+        return $base . '/bridge/connect?partner_key=' . urlencode($this->http->getPartnerKey()) . '&display_name=' . urlencode($displayName);
+    }
+
     public function list(): array  { return $this->http->get('/clients'); }
     public function remove(string $wabaId): array  { return $this->http->delete("/clients/{$wabaId}"); }
 
