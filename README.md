@@ -67,6 +67,15 @@ Route::post('/webhook', function (Request $request) {
 
     return response('OK');
 });
+
+// 🆔 BSUID — Business-Scoped User ID (stable across WhatsApp username changes,
+// rollout Jun 2026). Store BOTH `from` (phone) and `bsuid` as a future-proof
+// customer key.
+function handleIncoming(array $data): void {
+    $phone = $data['from'] ?? null;
+    $bsuid = $data['bsuid'] ?? null;  // e.g. "MY.2035200694071263"
+    // ... your business logic here
+}
 ```
 
 ## Error Handling

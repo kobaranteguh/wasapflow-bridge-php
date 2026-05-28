@@ -309,9 +309,9 @@ class Clients
     }
 
     /** Register a WABA using an Embedded Signup code. Token exchange happens server-side. */
-    public function registerFromCode(string $code, string $displayName = ''): array {
+    public function registerFromCode(string $code, string $displayName = '', string $connectionMode = 'coexistence'): array {
         return $this->http->post('/clients/register-from-code', [
-            'code' => $code, 'display_name' => $displayName,
+            'code' => $code, 'display_name' => $displayName, 'connection_mode' => $connectionMode,
         ]);
     }
 
